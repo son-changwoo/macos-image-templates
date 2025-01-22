@@ -1,7 +1,7 @@
 packer {
   required_plugins {
     tart = {
-      version = ">= 1.12.0"
+      version = ">= 1.14.0"
       source  = "github.com/cirruslabs/tart"
     }
   }
@@ -9,10 +9,12 @@ packer {
 
 variable "macos_version" {
   type = string
+  default = "sequoia"
 }
 
 variable "xcode_version" {
   type = list(string)
+  default = ["16.1"]
 }
 
 variable "additional_runtimes" {
@@ -32,12 +34,7 @@ variable "disk_size" {
 
 variable "disk_free_mb" {
   type = number
-  default = 15000
-}
-
-variable "android_sdk_tools_version" {
-  type    = string
-  default = "11076708" # https://developer.android.com/studio#command-line-tools-only
+  default = 60000
 }
 
 source "tart-cli" "tart" {
@@ -66,7 +63,7 @@ locals {
         "APP_DIR=$(dirname $CONTENTS_DIR)",
         "sudo mv $APP_DIR /Applications/Xcode_${version}.app",
         "sudo xcode-select -s /Applications/Xcode_${version}.app",
-        "xcodebuild -downloadAllPlatforms",
+        "xcodebuild -downloadPlatform iOS",
         "xcodebuild -runFirstLaunch",
       ]
     }
@@ -100,32 +97,13 @@ build {
   provisioner "shell" {
     inline = [
       "source ~/.zprofile",
-      "brew install openjdk@17",
-      "echo 'export PATH=\"/opt/homebrew/opt/openjdk@17/bin:$PATH\"' >> ~/.zprofile",
-      "echo 'export ANDROID_HOME=$HOME/android-sdk' >> ~/.zprofile",
-      "echo 'export ANDROID_SDK_ROOT=$ANDROID_HOME' >> ~/.zprofile",
-      "echo 'export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator' >> ~/.zprofile",
-      "source ~/.zprofile",
-      "wget -q https://dl.google.com/android/repository/commandlinetools-mac-${var.android_sdk_tools_version}_latest.zip -O android-sdk-tools.zip",
-      "mkdir -p $ANDROID_HOME/cmdline-tools/",
-      "unzip -q android-sdk-tools.zip -d $ANDROID_HOME/cmdline-tools/",
-      "rm android-sdk-tools.zip",
-      "mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest",
-      "yes | sdkmanager --licenses",
-      "yes | sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018'"
-    ]
-  }
-
-  provisioner "shell" {
-    inline = [
-      "source ~/.zprofile",
       "brew install xcodesorg/made/xcodes",
       "xcodes version",
     ]
   }
 
   provisioner "file" {
-    sources      = [ for version in var.xcode_version : pathexpand("~/XcodesCache/Xcode_${version}.xip")]
+    sources      = [ for version in var.xcode_version : pathexpand("~/Downloads/Xcode_${version}.xip")]
     destination = "/Users/admin/Downloads/"
   }
 
@@ -158,36 +136,10 @@ build {
   provisioner "shell" {
     inline = [
       "source ~/.zprofile",
-      "echo 'export FLUTTER_HOME=$HOME/flutter' >> ~/.zprofile",
-      "echo 'export PATH=$HOME/flutter:$HOME/flutter/bin/:$HOME/flutter/bin/cache/dart-sdk/bin:$PATH' >> ~/.zprofile",
-      "source ~/.zprofile",
-      "git clone https://github.com/flutter/flutter.git $FLUTTER_HOME",
-      "cd $FLUTTER_HOME",
-      "git checkout stable",
-      "flutter doctor --android-licenses",
-      "flutter doctor",
-      "flutter precache",
-    ]
-  }
-  provisioner "shell" {
-    inline = [
-      "source ~/.zprofile",
       "brew install libimobiledevice ideviceinstaller ios-deploy fastlane carthage",
       "brew install xcbeautify",
       "gem update",
-      "gem install cocoapods",
-      "gem install xcpretty",
       "gem uninstall --ignore-dependencies ffi && gem install ffi -- --enable-libffi-alloc"
-    ]
-  }
-
-  # useful utils for mobile development
-  provisioner "shell" {
-    inline = [
-      "source ~/.zprofile",
-      "brew install graphicsmagick imagemagick",
-      "brew install wix/brew/applesimutils",
-      "brew install gnupg"
     ]
   }
 
@@ -202,13 +154,6 @@ build {
       "sudo ./add-certificate AppleWWDRCAG3.cer",
       "sudo ./add-certificate DeveloperIDG2CA.cer",
       "rm add-certificate* *.cer"
-    ]
-  }
-
-  provisioner "shell" {
-    inline = [
-      "source ~/.zprofile",
-      "flutter doctor"
     ]
   }
 
