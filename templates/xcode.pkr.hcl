@@ -9,12 +9,12 @@ packer {
 
 variable "macos_version" {
   type = string
-  default = "sequoia"
+  default = "sonoma"
 }
 
 variable "xcode_version" {
   type = list(string)
-  default = ["16.1"]
+  default = ["16.2"]
 }
 
 variable "additional_runtimes" {
@@ -29,7 +29,7 @@ variable "tag" {
 
 variable "disk_size" {
   type = number
-  default = 100
+  default = 200
 }
 
 variable "disk_free_mb" {
@@ -42,7 +42,7 @@ source "tart-cli" "tart" {
   // use tag or the last element of the xcode_version list
   vm_name      = "${var.macos_version}-xcode:${var.tag != "" ? var.tag : var.xcode_version[0]}"
   cpu_count    = 4
-  memory_gb    = 8
+  memory_gb    = 16
   disk_size_gb = var.disk_size
   headless     = true
   ssh_password = "admin"
@@ -136,7 +136,7 @@ build {
   provisioner "shell" {
     inline = [
       "source ~/.zprofile",
-      "brew install libimobiledevice ideviceinstaller ios-deploy fastlane carthage",
+      "brew install libimobiledevice ideviceinstaller ios-deploy",
       "brew install xcbeautify",
       "gem update",
       "gem uninstall --ignore-dependencies ffi && gem install ffi -- --enable-libffi-alloc"

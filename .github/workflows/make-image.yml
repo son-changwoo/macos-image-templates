@@ -1,0 +1,59 @@
+name: Build & Push macOS Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      xcode_version:
+          description: '설치할 Xcode 버전'
+          required: true
+          default: '16.1'
+      macos_version:
+        description: '설치할 MacOS 버전'
+        required: true
+        default: 'sonoma'
+
+env:
+    BUILD_NUMBER: ${{ github.run_number }}
+    PACKER_GITHUB_API_TOKEN: ${{ secrets.GHCR_TOKEN }}
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Tart
+        run: brew install cirruslabs/cli/tart
+
+      - name: Install Xcode version
+        env:
+          FASTLANE_SESSION: ${{ secrets.FASTLANE_SESSION }}
+        run: |
+            xcodes download --use-fastlane-auth ${{ github.event.inputs.xcode_version }} --directory "~/Downloads/"
+
+      - name: Rename downloaded Xcode file to .zip
+        run: |
+            # 파일 이름은 예시: Xcode-16.2.0+16C5032a.xip
+            FILE=$(ls ~/Downloads/Xcode-*+*.xip | head -n 1)
+            if [ -z "$FILE" ]; then
+                echo "No Xcode file found in ~/Downloads" >&2
+                exit 1
+            fi
+            NEWFILE=~/Downloads/Xcode_${{ github.event.inputs.xcode_version }}.xip
+            echo "Renaming $FILE to $NEWFILE"
+            mv "$FILE" "$NEWFILE"
+
+      - name: Build Image with Packer
+        run: |
+          packer init templates/xcode.pkr.hcl
+          packer build \
+            -var 'xcode_version=["${{ github.event.inputs.xcode_version }}"]' \
+            -var 'macos_version=${{ github.event.inputs.macos_version }}' \
+            templates/xcode.pkr.hcl
+
+      - name: Tart Login to GHCR
+        run: echo "${{ secrets.GHCR_TOKEN }}" | tart login ghcr.io
+
+      - name: Push Image to GHCR
+        run: tart push ${{ github.event.inputs.macos_version }}-xcode:${{ github.event.inputs.xcode_version }} ghcr.io/son-changwoo/cilicon:${{ github.event.inputs.macos_version }}-xcode:${{ github.event.inputs.xcode_version }}.$BUILD_NUMBER
