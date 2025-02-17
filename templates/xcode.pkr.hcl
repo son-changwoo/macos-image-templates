@@ -8,33 +8,43 @@ packer {
 }
 
 variable "macos_version" {
-  type = string
+  type    = string
   default = "sonoma"
 }
 
 variable "xcode_version" {
-  type = list(string)
-  default = ["16.2"]
+  type    = list(string)
+  default = ["16.1"]
 }
 
 variable "additional_runtimes" {
-  type = list(string)
+  type    = list(string)
   default = []
 }
 
 variable "tag" {
-  type = string
+  type    = string
   default = ""
 }
 
 variable "disk_size" {
-  type = number
+  type    = number
   default = 200
 }
 
 variable "disk_free_mb" {
   type = number
   default = 60000
+}
+
+variable "android_sdk_tools_version" {
+  type    = string
+  default = "11076708" # https://developer.android.com/studio#command-line-tools-only
+}
+
+variable "npm_version" {
+  type    = string
+  default = "10.8.1"
 }
 
 source "tart-cli" "tart" {
@@ -65,6 +75,8 @@ locals {
         "sudo xcode-select -s /Applications/Xcode_${version}.app",
         "xcodebuild -downloadPlatform iOS",
         "xcodebuild -runFirstLaunch",
+        "sudo xcodebuild -license accept",
+        "sudo DevToolsSecurity -enable",
       ]
     }
   ]
@@ -113,6 +125,7 @@ build {
     for_each = local.xcode_install_provisioners
     labels = ["shell"]
     content {
+      expect_disconnect = true
       inline = provisioner.value.inline
     }
   }
@@ -134,16 +147,87 @@ build {
   }
 
   provisioner "shell" {
+    expect_disconnect = true
     inline = [
       "source ~/.zprofile",
-      "brew install libimobiledevice ideviceinstaller ios-deploy",
-      "brew install xcbeautify",
+      "brew install ideviceinstaller xcbeautify",
       "gem update",
       "gem uninstall --ignore-dependencies ffi && gem install ffi -- --enable-libffi-alloc"
     ]
   }
 
-  # inspired by https://github.com/actions/runner-images/blob/fb3b6fd69957772c1596848e2daaec69eabca1bb/images/macos/provision/configuration/configure-machine.sh#L33-L61
+  # useful utils for mobile development
+  provisioner "shell" {
+    expect_disconnect = true
+    inline = [
+      "source ~/.zprofile",
+      "brew install graphicsmagick imagemagick",
+      "brew install gnupg"
+    ]
+  }
+
+  provisioner "shell" {
+    expect_disconnect = true
+    valid_exit_codes = [0, 2300218]
+    inline = [
+      # 환경변수 및 OpenJDK 17 설치 (zprofile 사용)
+      "source ~/.zprofile",
+      "brew install openjdk@17",
+      "echo 'export JAVA_HOME=$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home' >> ~/.zprofile",
+      "echo 'export PATH=\"/opt/homebrew/opt/openjdk@17/bin:$PATH\"' >> ~/.zprofile",
+      "echo 'export ANDROID_HOME=$HOME/android-sdk' >> ~/.zprofile",
+      "echo 'export ANDROID_SDK_ROOT=$ANDROID_HOME' >> ~/.zprofile",
+      "echo 'export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator' >> ~/.zprofile",
+      "source ~/.zprofile",
+
+      # Commandline Tools 다운로드 및 설치
+      "wget -q https://dl.google.com/android/repository/commandlinetools-mac-${var.android_sdk_tools_version}_latest.zip -O android-sdk-tools.zip",
+      "mkdir -p $ANDROID_HOME/cmdline-tools/",
+      "unzip -q android-sdk-tools.zip -d $ANDROID_HOME/cmdline-tools/",
+      "rm android-sdk-tools.zip",
+      "mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest",
+
+      # 라이선스 동의 및 SDK 구성 요소 설치
+      "yes | sdkmanager --licenses",
+      "yes | sdkmanager 'tools' 'platform-tools' 'emulator' 'extras;android;m2repository' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018'",
+      "yes | sdkmanager 'system-images;android-35;google_apis_playstore;arm64-v8a'",
+      "yes | sdkmanager --update",
+
+      # 에뮬레이터(AVD) 생성: Pixel_4_API_33이 없는 경우 생성
+      "emulators=$($ANDROID_HOME/emulator/emulator -list-avds 2>&1)",
+      "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager -s create avd -f -n Pixel_4_API_35 -b google_apis_playstore/arm64-v8a -k 'system-images;android-35;google_apis_playstore;arm64-v8a' -d 'pixel_4'",
+    ]
+  }
+
+  provisioner "shell" {
+    expect_disconnect = true
+    valid_exit_codes = [0, 2300218]
+    inline = [
+      "source ~/.zprofile",
+      "brew install node jq",
+      "brew install cmake opencv@4 ios-deploy libimobiledevice wix/brew/applesimutils",
+      "npm install -g npm@${var.npm_version} appium @appium/doctor",
+      "npm install -g npm@${var.npm_version} mjpeg-consumer",
+
+      # 4. (선택 사항) bundletool: Google의 bundletool jar 다운로드 (필요 시)
+      "curl -L -o /usr/local/bin/bundletool.jar https://github.com/google/bundletool/releases/download/1.18.0/bundletool-all-1.18.0.jar || echo 'Failed to download bundletool';",
+
+      # 5. (선택 사항) GStreamer 설치: gst-launch-1.0, gst-inspect-1.0 제공
+      "brew install gstreamer gst-plugins-base || echo 'Failed to install GStreamer'",
+
+      "appium driver install --source=npm appium-xcuitest-driver@5.16.1",
+      "appium driver install --source=npm appium-uiautomator2-driver@2.45.1",
+      "appium driver install --source=npm appium-espresso-driver@2.44.0",
+      "appium plugin install images@2.1.8",
+      "appium driver update xcuitest",
+      "appium driver update uiautomator2",
+      "appium driver update espresso",
+      "appium plugin update images --unsafe || true",
+
+      "appium-doctor",
+    ]
+  }
+
   provisioner "shell" {
     inline = [
       "source ~/.zprofile",
@@ -203,7 +287,7 @@ build {
   # [2]: https://stackoverflow.com/a/68394101/9316533
   provisioner "shell" {
     inline = [
-      "sleep 1800"
+      "sleep 180"
     ]
   }
 }
