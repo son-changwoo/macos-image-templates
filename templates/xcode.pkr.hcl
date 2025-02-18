@@ -65,6 +65,8 @@ locals {
         "sudo xcode-select -s /Applications/Xcode_${version}.app",
         "xcodebuild -downloadPlatform iOS",
         "xcodebuild -runFirstLaunch",
+        "sudo xcodebuild -license accept",
+        "sudo DevToolsSecurity -enable",
       ]
     }
   ]
@@ -113,6 +115,7 @@ build {
     for_each = local.xcode_install_provisioners
     labels = ["shell"]
     content {
+      expect_disconnect = true
       inline = provisioner.value.inline
     }
   }
@@ -134,10 +137,12 @@ build {
   }
 
   provisioner "shell" {
+    expect_disconnect = true
     inline = [
       "source ~/.zprofile",
       "brew install libimobiledevice ideviceinstaller ios-deploy",
       "brew install xcbeautify",
+      "brew install graphicsmagick imagemagick",
       "gem update",
       "gem uninstall --ignore-dependencies ffi && gem install ffi -- --enable-libffi-alloc"
     ]
@@ -203,7 +208,7 @@ build {
   # [2]: https://stackoverflow.com/a/68394101/9316533
   provisioner "shell" {
     inline = [
-      "sleep 1800"
+      "sleep 180"
     ]
   }
 }
