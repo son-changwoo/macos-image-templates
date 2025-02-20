@@ -9,7 +9,7 @@ packer {
 
 variable "macos_version" {
   type = string
-  default = "sonoma"
+  default = "sequoia"
 }
 
 variable "xcode_version" {
